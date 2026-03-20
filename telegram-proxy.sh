@@ -14,7 +14,7 @@ apt-get autoremove --purge -y
 apt-get clean
 
 # Параметры
-PORT="443"
+PORT="8443"
 DOMAIN="vk.com"
 VERSION="3.3.27"
 DOMAIN_HEX=$(echo -n "$DOMAIN" | xxd -p)
