@@ -2,7 +2,8 @@
 
 Один порт **8443**: по SNI трафик к домену маскировки (например `vk.com`) 
 
-- **Telemt** — современный MTProxy (Rust, distroless), поддерживает Fake TLS.
+- **Telemt** — современный Telemt - MTProxy on Rust + Tokio https://github.com/telemt/telemt.
+- скипрт автоматической установки:
 
 ## Установка на сервере (всё тянется с GitHub)
 ```bash
