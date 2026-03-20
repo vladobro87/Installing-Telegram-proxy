@@ -14,8 +14,8 @@ apt-get autoremove --purge -y
 apt-get clean
 
 # Параметры
-PORT="902"
-DOMAIN="2gis.com"
+PORT="443"
+DOMAIN="vk.com"
 VERSION="3.3.27"
 DOMAIN_HEX=$(echo -n "$DOMAIN" | xxd -p)
 BINARY_PATH="/usr/local/bin/telemt"
