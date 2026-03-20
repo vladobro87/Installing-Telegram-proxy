@@ -4,6 +4,14 @@
 
 - **Telemt** — современный Telemt - MTProxy on Rust + Tokio https://github.com/telemt/telemt.
 - скипрт автоматической установки:
+- можно задать свой PORT и DOMAIN
+
+# Параметры
+- PORT="8443"
+- DOMAIN="vk.com"
+- VERSION="3.3.27"
+- BINARY_PATH="/usr/local/bin/telemt"
+- CONFIG_DIR="/etc/telemt"
 
 ## Установка на сервере (всё тянется с GitHub)
 ```bash
