@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-
+# 2026-03-20
 echo
 echo "Installing Telegram proxy..."
 echo
