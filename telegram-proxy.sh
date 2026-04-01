@@ -17,7 +17,7 @@ apt-get clean
 PORT="8443"
 DOMAIN="vk.com"
 # Версия ( по умолчанию: 3.3.27 )
-VERSION="3.3.35"
+VERSION="3.3.27"
 DOMAIN_HEX=$(echo -n "$DOMAIN" | xxd -p)
 BINARY_PATH="/usr/local/bin/telemt"
 CONFIG_DIR="/etc/telemt"
