@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-# 2026-03-20
+# 2026-04-01
 echo
 echo "Installing Telegram proxy..."
 echo
@@ -16,7 +16,8 @@ apt-get clean
 # Параметры
 PORT="8443"
 DOMAIN="vk.com"
-VERSION="3.3.27"
+# Версия ( по умолчанию: 3.3.27 )
+VERSION="3.3.35"
 DOMAIN_HEX=$(echo -n "$DOMAIN" | xxd -p)
 BINARY_PATH="/usr/local/bin/telemt"
 CONFIG_DIR="/etc/telemt"
@@ -25,6 +26,7 @@ IP="$(ip route get 1.2.3.4 2>/dev/null | grep -oP 'src \K\S+')"
 TMP_DIR="$(mktemp -d)"
 ARCH="$(uname -m)"
 LIBC="gnu"
+# https://github.com/telemt/telemt/releases
 TELEMT_URL="https://github.com/telemt/telemt/releases/download/${VERSION}/telemt-${ARCH}-linux-${LIBC}.tar.gz"
 if [[ -f "$CONFIG_FILE" ]]; then
     OLD_SECRET="$(sed -n 's/^[[:space:]]*user[[:space:]]*=[[:space:]]*"\([0-9a-fA-F]\{32\}\)".*/\1/p' "$CONFIG_FILE" | head -n 1)"
