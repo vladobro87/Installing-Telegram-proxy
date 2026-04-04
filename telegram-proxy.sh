@@ -2,7 +2,7 @@
 set -e
 # 2026-04-02
 echo
-echo "Installing Telegram proxy..."
+echo "Updating system..."
 echo
 
 # Обновление системы
@@ -13,7 +13,9 @@ apt-get install -y curl openssl xxd
 apt-get autoremove --purge -y
 apt-get clean
 clear
-
+echo
+echo "Installing Telegram proxy..."
+echo
 # Параметры
 PORT=8443				# Порт для прокси-сервера
 DOMAIN="vk.com"		# Домен для маскировки TLS
