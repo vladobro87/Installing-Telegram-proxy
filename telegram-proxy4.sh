@@ -202,3 +202,5 @@ echo
 echo "Ссылка для подключения:"
 echo "tg://proxy?server=${IP}&port=${PORT}&secret=ee${SECRET}${DOMAIN_HEX}"
 echo
+
+systemctl status telemt
