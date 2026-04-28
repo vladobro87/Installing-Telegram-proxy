@@ -1,104 +1,107 @@
 #!/bin/bash
 
-# ==== CONFIG ====
-xui_folder="/usr/local/x-ui"   # при необходимости измени путь
+set -e
+set -o pipefail
+#set -x  # раскомментируй если нужен полный трейс команд
 
-# ==== LOG FUNCTIONS ====
-LOGI() { echo -e "[INFO] $1"; }
-LOGE() { echo -e "[ERROR] $1"; }
-LOGW() { echo -e "[WARN] $1"; }
-
-# ==== HELPERS ====
-is_ipv6() {
-    [[ "$1" =~ : ]]
-}
+LOGI() { echo -e "\e[32m[INFO]\e[0m $1"; }
+LOGE() { echo -e "\e[31m[ERROR]\e[0m $1"; }
+LOGW() { echo -e "\e[33m[WARN]\e[0m $1"; }
 
 is_port_in_use() {
     ss -tuln | grep -q ":$1 "
 }
 
 install_acme() {
+    LOGI "Installing acme.sh..."
     curl https://get.acme.sh | sh
 }
 
-restart() {
-    systemctl restart x-ui 2>/dev/null || true
-}
+LOGI "=== SSL SCRIPT START ==="
 
-# ==== MAIN FUNCTION ====
-ssl_cert_issue_for_ip() {
+# ---- IP ----
+LOGI "Detecting public IP..."
+server_ip=$(curl -v -s --max-time 5 https://api.ipify.org)
 
-    LOGI "Starting automatic SSL certificate generation for server IP..."
+if [ -z "$server_ip" ]; then
+    LOGW "Primary IP service failed, trying backup..."
+    server_ip=$(curl -v -s --max-time 5 https://4.ident.me)
+fi
 
-    local existing_webBasePath=$(${xui_folder}/x-ui setting -show true | grep -Eo 'webBasePath: .+' | awk '{print $2}')
-    local existing_port=$(${xui_folder}/x-ui setting -show true | grep -Eo 'port: .+' | awk '{print $2}')
+if [ -z "$server_ip" ]; then
+    LOGE "Cannot detect public IP"
+    exit 1
+fi
 
-    local server_ip=$(curl -s --max-time 3 https://api.ipify.org)
-    [ -z "$server_ip" ] && server_ip=$(curl -s --max-time 3 https://4.ident.me)
+LOGI "Detected IP: $server_ip"
 
-    if [ -z "$server_ip" ]; then
-        LOGE "Failed to get server IP address"
-        exit 1
-    fi
+# ---- acme.sh ----
+if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
+    install_acme
+else
+    LOGI "acme.sh already installed"
+fi
 
-    LOGI "Server IP detected: ${server_ip}"
+# ---- socat ----
+LOGI "Installing socat..."
+apt-get update
+apt-get install -y socat
 
-    read -rp "IPv6 (optional): " ipv6_addr
-    ipv6_addr="${ipv6_addr// /}"
+# ---- port ----
+read -rp "Port for validation (default 80): " WebPort
+WebPort="${WebPort:-80}"
 
-    if ! command -v ~/.acme.sh/acme.sh &>/dev/null; then
-        LOGI "Installing acme.sh..."
-        install_acme
-    fi
+LOGI "Checking port $WebPort..."
+while is_port_in_use "$WebPort"; do
+    LOGW "Port $WebPort is busy"
+    read -rp "Enter another port: " WebPort
+done
 
-    apt-get update -y && apt-get install -y socat
+LOGI "Port $WebPort is free"
 
-    certPath="/root/cert/ip"
-    mkdir -p "$certPath"
+# ---- cert path ----
+certPath="/root/cert/ip"
+mkdir -p "$certPath"
 
-    domain_args="-d ${server_ip}"
-    if [[ -n "$ipv6_addr" ]] && is_ipv6 "$ipv6_addr"; then
-        domain_args="${domain_args} -d ${ipv6_addr}"
-    fi
+LOGI "Cert path: $certPath"
 
-    read -rp "Port (default 80): " WebPort
-    WebPort="${WebPort:-80}"
+# ---- issue cert ----
+LOGI "Setting Let's Encrypt as default CA..."
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force
 
-    while is_port_in_use "$WebPort"; do
-        read -rp "Port busy. Enter another: " WebPort
-    done
+LOGI "Issuing certificate..."
+~/.acme.sh/acme.sh --issue \
+    -d "$server_ip" \
+    --standalone \
+    --httpport "$WebPort" \
+    --server letsencrypt \
+    --certificate-profile shortlived \
+    --days 6 \
+    --force
 
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force
+LOGI "acme.sh exit code: $?"
 
-    ~/.acme.sh/acme.sh --issue \
-        ${domain_args} \
-        --standalone \
-        --httpport ${WebPort} \
-        --force
+if [ $? -ne 0 ]; then
+    LOGE "Certificate issue FAILED"
+    exit 1
+fi
 
-    if [ $? -ne 0 ]; then
-        LOGE "Certificate issue failed"
-        exit 1
-    fi
+# ---- install cert ----
+LOGI "Installing certificate files..."
+~/.acme.sh/acme.sh --installcert -d "$server_ip" \
+    --key-file "$certPath/privkey.pem" \
+    --fullchain-file "$certPath/fullchain.pem"
 
-    ~/.acme.sh/acme.sh --installcert -d ${server_ip} \
-        --key-file "${certPath}/privkey.pem" \
-        --fullchain-file "${certPath}/fullchain.pem"
+LOGI "Checking result..."
+ls -la "$certPath"
 
-    if [[ ! -f "${certPath}/fullchain.pem" ]]; then
-        LOGE "Cert files not found"
-        exit 1
-    fi
+if [[ ! -f "$certPath/fullchain.pem" ]]; then
+    LOGE "Certificate not found"
+    exit 1
+fi
 
-    ${xui_folder}/x-ui cert \
-        -webCert "${certPath}/fullchain.pem" \
-        -webCertKey "${certPath}/privkey.pem"
+LOGI "=== SUCCESS ==="
+echo "Certificate:"
+echo "  Key: $certPath/privkey.pem"
+echo "  Cert: $certPath/fullchain.pem"
 
-    LOGI "SSL installed!"
-    echo "https://${server_ip}:${existing_port}${existing_webBasePath}"
-
-    restart
-}
-
-# ==== RUN ====
-ssl_cert_issue_for_ip
