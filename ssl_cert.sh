@@ -1,3 +1,10 @@
+#!/bin/bash
+set -e
+
+echo
+echo "Installing ssl..."
+echo
+
 ssl_cert_issue_for_ip() {
     LOGI "Starting automatic SSL certificate generation for server IP..."
     LOGI "Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)"
