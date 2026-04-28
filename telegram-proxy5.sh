@@ -3,7 +3,7 @@ set -e
 
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/2FrogsStudio/mtproto-installer/main}"
 INSTALL_DIR="${INSTALL_DIR:-$(pwd)/mtproxy-data}"
-FAKE_DOMAIN="${FAKE_DOMAIN:-1c.ru}"
+FAKE_DOMAIN="${FAKE_DOMAIN:-apple.com}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
 
@@ -159,7 +159,7 @@ download_and_configure() {
 	SECRET=$(generate_secret)
 
 	sed -e "s/ПОДСТАВЬТЕ_32_СИМВОЛА_HEX/${SECRET}/g" \
-	    -e "s/tls_domain = \"1c.ru\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
+	    -e "s/tls_domain = \"apple.com\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
 	    "${INSTALL_DIR}/telemt.toml.example" > "${INSTALL_DIR}/telemt.toml"
 	rm -f "${INSTALL_DIR}/telemt.toml.example"
 	info "Создан ${INSTALL_DIR}/telemt.toml (домен маскировки: ${FAKE_DOMAIN})"
@@ -211,7 +211,7 @@ print_link() {
 	LINK="tg://proxy?server=${SERVER_IP}&port=${LISTEN_PORT}&secret=${LONG_SECRET}"
 	echo ""
 	echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-	echo -e "${GREEN}║  Ссылка для Telegram (Fake TLS)                         ║${NC}"
+	echo -e "${GREEN}║  Ссылка для Telegram (Fake TLS)                          ║${NC}"
 	echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 	echo ""
 	echo -e "  ${GREEN}${LINK}${NC}"
