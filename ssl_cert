@@ -1,0 +1,181 @@
+ssl_cert_issue_for_ip() {
+    LOGI "Starting automatic SSL certificate generation for server IP..."
+    LOGI "Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)"
+    
+    local existing_webBasePath=$(${xui_folder}/x-ui setting -show true | grep -Eo 'webBasePath: .+' | awk '{print $2}')
+    local existing_port=$(${xui_folder}/x-ui setting -show true | grep -Eo 'port: .+' | awk '{print $2}')
+    
+    # Get server IP
+    local server_ip=$(curl -s --max-time 3 https://api.ipify.org)
+    if [ -z "$server_ip" ]; then
+        server_ip=$(curl -s --max-time 3 https://4.ident.me)
+    fi
+    
+    if [ -z "$server_ip" ]; then
+        LOGE "Failed to get server IP address"
+        return 1
+    fi
+    
+    LOGI "Server IP detected: ${server_ip}"
+    
+    # Ask for optional IPv6
+    local ipv6_addr=""
+    read -rp "Do you have an IPv6 address to include? (leave empty to skip): " ipv6_addr
+    ipv6_addr="${ipv6_addr// /}"  # Trim whitespace
+    
+    # check for acme.sh first
+    if ! command -v ~/.acme.sh/acme.sh &>/dev/null; then
+        LOGI "acme.sh not found, installing..."
+        install_acme
+        if [ $? -ne 0 ]; then
+            LOGE "Failed to install acme.sh"
+            return 1
+        fi
+    fi
+    
+    # install socat
+    case "${release}" in
+    ubuntu | debian | armbian)
+        apt-get update >/dev/null 2>&1 && apt-get install socat -y >/dev/null 2>&1
+        ;;
+    fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol)
+        dnf -y update >/dev/null 2>&1 && dnf -y install socat >/dev/null 2>&1
+        ;;
+    centos)
+        if [[ "${VERSION_ID}" =~ ^7 ]]; then
+            yum -y update >/dev/null 2>&1 && yum -y install socat >/dev/null 2>&1
+        else
+            dnf -y update >/dev/null 2>&1 && dnf -y install socat >/dev/null 2>&1
+        fi
+        ;;
+    arch | manjaro | parch)
+        pacman -Sy --noconfirm socat >/dev/null 2>&1
+        ;;
+    opensuse-tumbleweed | opensuse-leap)
+        zypper refresh >/dev/null 2>&1 && zypper -q install -y socat >/dev/null 2>&1
+        ;;
+    alpine)
+        apk add socat curl openssl >/dev/null 2>&1
+        ;;
+    *)
+        LOGW "Unsupported OS for automatic socat installation"
+        ;;
+    esac
+    
+    # Create certificate directory
+    certPath="/root/cert/ip"
+    mkdir -p "$certPath"
+    
+    # Build domain arguments
+    local domain_args="-d ${server_ip}"
+    if [[ -n "$ipv6_addr" ]] && is_ipv6 "$ipv6_addr"; then
+        domain_args="${domain_args} -d ${ipv6_addr}"
+        LOGI "Including IPv6 address: ${ipv6_addr}"
+    fi
+    
+    # Choose port for HTTP-01 listener (default 80, allow override)
+    local WebPort=""
+    read -rp "Port to use for ACME HTTP-01 listener (default 80): " WebPort
+    WebPort="${WebPort:-80}"
+    if ! [[ "${WebPort}" =~ ^[0-9]+$ ]] || ((WebPort < 1 || WebPort > 65535)); then
+        LOGE "Invalid port provided. Falling back to 80."
+        WebPort=80
+    fi
+    LOGI "Using port ${WebPort} to issue certificate for IP: ${server_ip}"
+    if [[ "${WebPort}" -ne 80 ]]; then
+        LOGI "Reminder: Let's Encrypt still reaches port 80; forward external port 80 to ${WebPort} for validation."
+    fi
+
+    while true; do
+        if is_port_in_use "${WebPort}"; then
+            LOGI "Port ${WebPort} is currently in use."
+
+            local alt_port=""
+            read -rp "Enter another port for acme.sh standalone listener (leave empty to abort): " alt_port
+            alt_port="${alt_port// /}"
+            if [[ -z "${alt_port}" ]]; then
+                LOGE "Port ${WebPort} is busy; cannot proceed with issuance."
+                return 1
+            fi
+            if ! [[ "${alt_port}" =~ ^[0-9]+$ ]] || ((alt_port < 1 || alt_port > 65535)); then
+                LOGE "Invalid port provided."
+                return 1
+            fi
+            WebPort="${alt_port}"
+            continue
+        else
+            LOGI "Port ${WebPort} is free and ready for standalone validation."
+            break
+        fi
+    done
+    
+    # Reload command - restarts panel after renewal
+    local reloadCmd="systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null"
+    
+    # issue the certificate for IP with shortlived profile
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt --force
+    ~/.acme.sh/acme.sh --issue \
+        ${domain_args} \
+        --standalone \
+        --server letsencrypt \
+        --certificate-profile shortlived \
+        --days 6 \
+        --httpport ${WebPort} \
+        --force
+    
+    if [ $? -ne 0 ]; then
+        LOGE "Failed to issue certificate for IP: ${server_ip}"
+        LOGE "Make sure port ${WebPort} is open and the server is accessible from the internet"
+        # Cleanup acme.sh data for both IPv4 and IPv6 if specified
+        rm -rf ~/.acme.sh/${server_ip} 2>/dev/null
+        [[ -n "$ipv6_addr" ]] && rm -rf ~/.acme.sh/${ipv6_addr} 2>/dev/null
+        rm -rf ${certPath} 2>/dev/null
+        return 1
+    else
+        LOGI "Certificate issued successfully for IP: ${server_ip}"
+    fi
+    
+    # Install the certificate
+    # Note: acme.sh may report "Reload error" and exit non-zero if reloadcmd fails,
+    # but the cert files are still installed. We check for files instead of exit code.
+    ~/.acme.sh/acme.sh --installcert -d ${server_ip} \
+        --key-file "${certPath}/privkey.pem" \
+        --fullchain-file "${certPath}/fullchain.pem" \
+        --reloadcmd "${reloadCmd}" 2>&1 || true
+    
+    # Verify certificate files exist (don't rely on exit code - reloadcmd failure causes non-zero)
+    if [[ ! -f "${certPath}/fullchain.pem" || ! -f "${certPath}/privkey.pem" ]]; then
+        LOGE "Certificate files not found after installation"
+        # Cleanup acme.sh data for both IPv4 and IPv6 if specified
+        rm -rf ~/.acme.sh/${server_ip} 2>/dev/null
+        [[ -n "$ipv6_addr" ]] && rm -rf ~/.acme.sh/${ipv6_addr} 2>/dev/null
+        rm -rf ${certPath} 2>/dev/null
+        return 1
+    fi
+    
+    LOGI "Certificate files installed successfully"
+    
+    # enable auto-renew
+    ~/.acme.sh/acme.sh --upgrade --auto-upgrade >/dev/null 2>&1
+    chmod 600 $certPath/privkey.pem 2>/dev/null
+    chmod 644 $certPath/fullchain.pem 2>/dev/null
+    
+    # Set certificate paths for the panel
+    local webCertFile="${certPath}/fullchain.pem"
+    local webKeyFile="${certPath}/privkey.pem"
+    
+    if [[ -f "$webCertFile" && -f "$webKeyFile" ]]; then
+        ${xui_folder}/x-ui cert -webCert "$webCertFile" -webCertKey "$webKeyFile"
+        LOGI "Certificate configured for panel"
+        LOGI "  - Certificate File: $webCertFile"
+        LOGI "  - Private Key File: $webKeyFile"
+        LOGI "  - Validity: ~6 days (auto-renews via acme.sh cron)"
+        echo -e "${green}Access URL: https://${server_ip}:${existing_port}${existing_webBasePath}${plain}"
+        LOGI "Panel will restart to apply SSL certificate..."
+        restart
+        return 0
+    else
+        LOGE "Certificate files not found after installation"
+        return 1
+    fi
+}
