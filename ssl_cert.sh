@@ -1,9 +1,31 @@
 #!/bin/bash
-set -e
 
-echo
-echo "Installing ssl..."
-echo
+# ==== CONFIG ====
+xui_folder="/usr/local/x-ui"   # при необходимости измени путь
+
+# ==== LOG FUNCTIONS ====
+LOGI() { echo -e "[INFO] $1"; }
+LOGE() { echo -e "[ERROR] $1"; }
+LOGW() { echo -e "[WARN] $1"; }
+
+# ==== HELPERS ====
+is_ipv6() {
+    [[ "$1" =~ : ]]
+}
+
+is_port_in_use() {
+    ss -tuln | grep -q ":$1 "
+}
+
+install_acme() {
+    curl https://get.acme.sh | sh
+}
+
+restart() {
+    systemctl restart x-ui 2>/dev/null || true
+}
+
+# ==== MAIN FUNCTION ====
 
 ssl_cert_issue_for_ip() {
     LOGI "Starting automatic SSL certificate generation for server IP..."
